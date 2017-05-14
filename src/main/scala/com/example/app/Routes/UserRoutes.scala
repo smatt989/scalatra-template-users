@@ -8,7 +8,12 @@ trait UserRoutes extends SlickRoutes with AuthenticationSupport{
 
   post("/users/create") {
     contentType = formats("json")
-    val user = parsedBody.extract[UserCreate]
+
+    val username = request.header(SessionTokenStrategy.Username)
+    val email = request.header(SessionTokenStrategy.Email)
+    val password = request.header(SessionTokenStrategy.Password)
+
+    val user = UserCreate(username.get, email.get, password.get)
 
     val created = User.createNewUser(user)
 
