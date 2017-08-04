@@ -1,25 +1,47 @@
+import store from './store.js';
+import Cookies from 'js-cookie';
+import { login, loginError, loginSuccess, loginClearInputs } from './actions.js';
 var _ = require('lodash');
 
-export function markerByKey(key, markers) {
-     return _.find(markers.toArray(), function(o){return o.get('key') === key});
+export var authenticationHeader = 'scalatra-session-key';
+export var cookieName = 'SCALATRA_SESS_KEY';
+
+export function getSession() {
+  return Cookies.get(cookieName);
 }
 
-export function showProps(obj){
-   for(var key in obj){
-       console.log(key+": "+obj[key]);
-   }
+export function setSession(session) {
+  if (session == null) {
+    Cookies.remove(cookieName);
+  } else {
+    Cookies.set(cookieName, session, { expires: 30 });
+  }
 }
 
-export function triggerByKey(key, triggers){
-    return _.find(triggers.toArray(), function(o){return o.get('key') === key});
+export function authenticate() {
+  var authentication = {};
+  authentication[authenticationHeader] = Cookies.get(cookieName);
+  return authentication;
 }
 
-export function itemSubTypeByItemTypeAndId(itemType, itemSubTypeId, triggerModel){
-    if(itemType === "action"){
-        return triggerModel.get('actions').find(function(o){return o.get('id') === itemSubTypeId})
-    }else if(itemType === "event"){
-        return triggerModel.get('events').find(function(o){return o.get('id') === itemSubTypeId})
-    }else {
-        console.log("VERY BAD")
-    }
+export const tryLogin = (email, password) => {
+  return store.dispatch(login(email, password))
+    .then(response => {
+      if (response.error) {
+        store.dispatch(loginError(response.error));
+        return false;
+      }
+
+      const session = response.payload.headers[authenticationHeader];
+      if (!session) {
+        return false;
+      }
+
+      store.dispatch(loginSuccess(session));
+      return true;
+    });
+};
+
+export function isNullLabel(label) {
+  return label.labelValue == 0 && !label.point1x && !label.xCoordinate
 }

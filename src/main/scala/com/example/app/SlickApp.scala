@@ -7,10 +7,9 @@ import org.scalatra.{FutureSupport, ScalatraServlet}
 class SlickApp() extends ScalatraServlet with FutureSupport
   with UserRoutes
   with SessionRoutes
-  with AppRoutes
-  with DBManagementRoutes {
+  with AppRoutes {
 
-  def db = AppGlobals.db()
+  def db = AppGlobals.db
 
   lazy val realm = "rekki"
 

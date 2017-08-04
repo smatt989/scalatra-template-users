@@ -1,54 +1,50 @@
 package com.example.app.models
 
-import com.example.app.{HasIntId, Tables, Updatable}
+import com.example.app.UpdatableDBObject
 import org.mindrot.jbcrypt.BCrypt
-import slick.driver.PostgresDriver.api._
+import com.example.app.AppGlobals
+import AppGlobals.dbConfig.driver.api._
+import com.example.app.db.Tables._
+import com.example.app.db.{Tables => T}
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Await, Future}
+import scala.concurrent.duration.Duration
+import scala.concurrent.Await
 
-case class User(username: String, email: String, hashedPassword: String, id: Int) extends HasIntId[User] {
-
-  def updateId(id: Int) =
-    this.copy(id = id)
-
-  lazy val toJson =
-    UserJson(username, id)
-}
-
-case class UserCreate(username: String, email: String, password: String) {
+case class UserCreate(email: String, password: String) {
   lazy val makeUser =
-    User(username, email, User.makeHash(password), 0)
+    UserAccountsRow(0, email, User.makeHash(password))
 }
 
-case class UpdateUser(username: Option[String], email: Option[String], password: String, newEmail: Option[String], newPassword: Option[String]){
+case class UpdateUser(email: String, password: String, newEmail: Option[String], newPassword: Option[String]){
   lazy val userLogin =
-    UserLogin(username, email, password)
+    UserLogin(email, password)
 }
 
-case class UserLogin(username: Option[String], email: Option[String], password: String){
-  require({(username ++ email).nonEmpty}, "Must provide either a username or email")
+case class UserLogin(email: String, password: String)
 
-}
+case class UserJson(id: Int, email: String)
 
-case class UserJson(username: String, id: Int)
 
-object User extends Updatable[User, (Int, String, String, String), Tables.Users]{
+object User extends UpdatableDBObject[UserAccountsRow, UserAccounts]{
 
-  lazy val table = Tables.users
+  def makeJson(a: UserAccountsRow) =
+    UserJson(a.userAccountId, a.email)
 
-  def reify(tuple: (Int, String, String, String)) =
-    User(tuple._2, tuple._3, tuple._4, tuple._1)
+  lazy val table = T.UserAccounts
 
-  def reifyJson(tuple: (Int, String, String, String)) =
-    reify(tuple).toJson
+  def idFromRow(a: _root_.com.example.app.db.Tables.UserAccountsRow) =
+    a.userAccountId
 
-  def classToTuple(a: User) =
-    (a.id, a.username, a.email, a.hashedPassword)
+  def updateId(a: _root_.com.example.app.db.Tables.UserAccountsRow, id: Int) =
+    a.copy(userAccountId = id)
 
-  def updateQuery(a: User) = table.filter(_.id === a.id)
-    .map(x => (x.username, x.email, x.hashedPassword))
-    .update((a.username, a.email, a.hashedPassword))
+  def idColumnFromTable(a: _root_.com.example.app.db.Tables.UserAccounts) =
+    a.userAccountId
+
+  def updateQuery(a: UserAccountsRow) = table.filter(t => idColumnFromTable(t) === idFromRow(a))
+    .map(x => (x.email, x.hashedPassword))
+    .update((a.email, a.hashedPassword))
 
   def makeHash(password: String) =
     BCrypt.hashpw(password, BCrypt.gensalt())
@@ -56,28 +52,21 @@ object User extends Updatable[User, (Int, String, String, String), Tables.Users]
   private[this] def checkPassword(password: String, hashedPassword: String) =
     BCrypt.checkpw(password, hashedPassword)
 
-  def authenticate(user: User, password: String) = {
+  def authenticate(user: UserAccountsRow, password: String) = {
     checkPassword(password, user.hashedPassword)
   }
 
   def searchUserName(query: String) = {
     val queryString = "%"+query.toLowerCase()+"%"
-    db.run(table.filter(_.username.toLowerCase like queryString).result).map(_.map(reifyJson))
+    db.run(table.filter(_.email.toLowerCase like queryString).result)//.map(_.map(reifyJson))
   }
 
   private[this] def unauthenticatedUserFromUserLogin(userLogin: UserLogin) = {
 
-    Await.result({if(userLogin.username.isDefined)
-      db.run(table.filter(_.username.toLowerCase === userLogin.username.get.toLowerCase()).result).map(_.headOption.map(reify).getOrElse{
-        throw new Exception("No user with that username")
-      })
-    else if(userLogin.email.isDefined)
-      db.run(table.filter(_.email.toLowerCase === userLogin.email.get.toLowerCase()).result).map(_.headOption.map(reify).getOrElse{
+    Await.result(
+      db.run(table.filter(_.email.toLowerCase === userLogin.email.toLowerCase()).result).map(_.headOption.getOrElse{
         throw new Exception("No user with that email")
-      })
-    else
-      throw new Exception("Must provide either a username or email")
-    }, UserSession.waitDuration)
+      }), Duration.Inf)
   }
 
   def authenticatedUser(userLogin: UserLogin) = {
@@ -89,22 +78,16 @@ object User extends Updatable[User, (Int, String, String, String), Tables.Users]
       None
   }
 
-  def uniqueUsername(username: String) =
-    db.run(table.filter(_.username.toLowerCase === username.toLowerCase).result).map(_.isEmpty)
-
   def uniqueEmail(email: String) =
     db.run(table.filter(_.email.toLowerCase === email.toLowerCase).result).map(_.isEmpty)
 
   def createNewUser(userCreate: UserCreate) = {
-    val usernameIsUnique = uniqueUsername(userCreate.username)
-    val emailIsUnique = uniqueEmail(userCreate.email)
+    val emailIsUnique = Await.result(uniqueEmail(userCreate.email), Duration.Inf)
 
-    Future.sequence(Seq(usernameIsUnique, emailIsUnique)).flatMap(k => (k.head, k(1)) match {
-      case (true, true) =>
-        create(userCreate.makeUser)
-      case _ =>
-        throw new Exception("Must provide unique email and username")
-    })
+    if(emailIsUnique)
+      create(userCreate.makeUser)
+    else
+      throw new Exception("Must provide unique email")
   }
 
   def updateUser(updateUser: UpdateUser) = {

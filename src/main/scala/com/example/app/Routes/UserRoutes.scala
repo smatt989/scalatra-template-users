@@ -1,30 +1,29 @@
 package com.example.app.Routes
 
+import com.example.app.db.Tables.DeviceTokensRow
 import com.example.app.models._
 import com.example.app.{AuthenticationSupport, SessionTokenStrategy, SlickRoutes}
-import org.scalatra.Ok
 
 trait UserRoutes extends SlickRoutes with AuthenticationSupport{
 
   post("/users/create") {
     contentType = formats("json")
 
-    val username = request.header(SessionTokenStrategy.Username)
     val email = request.header(SessionTokenStrategy.Email)
     val password = request.header(SessionTokenStrategy.Password)
 
-    val user = UserCreate(username.get, email.get, password.get)
+    val user = UserCreate(email.get, password.get)
 
     val created = User.createNewUser(user)
 
-    created.map(_.toJson)
+    created.map(User.makeJson)
   }
 
   post("/users/search") {
     contentType = formats("json")
     val query = {params("query")}
 
-    User.searchUserName(query)
+    User.searchUserName(query).map(_.map(User.makeJson))
   }
 
   post("/users/connections/create") {
@@ -32,8 +31,9 @@ trait UserRoutes extends SlickRoutes with AuthenticationSupport{
     authenticate()
 
     val connectionRequest = parsedBody.extract[ConnectionRequestJson]
-    val connection = connectionRequest.newConnection(user.id)
+    val connection = connectionRequest.newConnection(user.userAccountId)
 
+    //interface changed here... id is now userConnectionId
     UserConnection.safeSave(connection)
   }
 
@@ -43,22 +43,22 @@ trait UserRoutes extends SlickRoutes with AuthenticationSupport{
 
     val rejectionRequest = parsedBody.extract[ConnectionDeleteJson]
 
-    UserConnection.removeBySenderReceiverPair(user.id, rejectionRequest.removeUserId).map(_ => "200")
+    UserConnection.removeBySenderReceiverPair(user.userAccountId, rejectionRequest.removeUserId).map(_ => "200")
   }
 
   get("/users/connections/added") {
     contentType = formats("json")
     authenticate()
 
-    UserConnection.getReceiversBySenderId(user.id)
+    UserConnection.getReceiversBySenderId(user.userAccountId).map(_.map(User.makeJson))
   }
 
   get("/users/connections/awaiting") {
     contentType = formats("json")
     authenticate()
 
-    val sent = UserConnection.getReceiversBySenderId(user.id)
-    val received = UserConnection.getSendersByReceiverId(user.id)
+    val sent = UserConnection.getReceiversBySenderId(user.userAccountId).map(_.map(User.makeJson))
+    val received = UserConnection.getSendersByReceiverId(user.userAccountId).map(_.map(User.makeJson))
 
     for {
       s <- sent
@@ -67,7 +67,7 @@ trait UserRoutes extends SlickRoutes with AuthenticationSupport{
   }
 
   get("/users") {
-    User.getAll.map(_.map(_.toJson))
+    User.getAll.map(_.map(User.makeJson))
   }
 
   post("/users/tokens"){
@@ -76,7 +76,9 @@ trait UserRoutes extends SlickRoutes with AuthenticationSupport{
 
     val rawToken = {params("device_token")}
 
-    val deviceToken = DeviceToken(userId = user.id, deviceToken = Some(rawToken))
+    val deviceToken = DeviceTokensRow(deviceTokenId = 0, userId = user.userAccountId, deviceToken = Some(rawToken))
+
+    //interface changed here... id is now deviceTokenId
     DeviceToken.save(deviceToken)
   }
 

@@ -2,20 +2,21 @@ package com.example.app
 
 import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 
+import com.example.app.db.Tables.UserAccountsRow
 import com.example.app.models.{User, UserLogin, UserSession}
 import org.scalatra.auth.ScentryAuthStore.SessionAuthStore
 import org.scalatra.auth.strategy.BasicAuthSupport
-import org.scalatra.ScalatraBase
+import org.scalatra.{CookieOptions, ScalatraBase}
 import org.scalatra.auth.{ScentryConfig, ScentryStrategy, ScentrySupport}
 
 object SessionTokenStrategy {
-  val HeaderKey = "Rekki-Session-Key"
-  val Username = "username"
+  val HeaderKey = "Scalatra-Session-Key"
   val Email = "email"
   val Password = "password"
+  val Cookie = "SCALATRA_SESS_KEY"
 }
 
-class SessionTokenStrategy(protected val app: ScalatraBase) extends ScentryStrategy[User] {
+class SessionTokenStrategy(protected val app: ScalatraBase) extends ScentryStrategy[UserAccountsRow] {
   import SessionTokenStrategy._
 
   private[this] def getHeader(implicit request: HttpServletRequest) = {
@@ -28,38 +29,57 @@ class SessionTokenStrategy(protected val app: ScalatraBase) extends ScentryStrat
 
   override def isValid(implicit request: HttpServletRequest): Boolean = {
     getToken.isDefined
-
   }
 
-  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[User] = {
+  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[UserAccountsRow] = {
     val token = getToken
-    token.flatMap {t =>  UserSession.byHashString(t).map(_.user) }
+    token.flatMap {t =>  UserSession.byHashString(t).map(UserSession.user) }
   }
 }
 
-class PasswordStrategy(protected val app: ScalatraBase) extends ScentryStrategy[User] {
+class CookieStrategy(protected val app: ScalatraBase) extends ScentryStrategy[UserAccountsRow] {
+
+  private def tokenVal(implicit request: HttpServletRequest) =
+    app.cookies.get(SessionTokenStrategy.Cookie)
 
   override def isValid(implicit request: HttpServletRequest) =
-    (request.getHeader(SessionTokenStrategy.Username) != null || request.getHeader(SessionTokenStrategy.Email) != null) && request.getHeader(SessionTokenStrategy.Password) != null
+    tokenVal.nonEmpty
 
-  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[User] = {
-    val uName = headerOption(request, SessionTokenStrategy.Username)
-    val eMail = headerOption(request, SessionTokenStrategy.Email)
-    User.authenticatedUser(UserLogin(uName, eMail, request.getHeader(SessionTokenStrategy.Password)))
+  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[UserAccountsRow] =
+    checkAuthentication()
+
+  def checkAuthentication()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[UserAccountsRow] = {
+    val token = tokenVal
+    token.flatMap {t => UserSession.byHashString(t).map(UserSession.user)}
+  }
+
+  override def unauthenticated()(implicit request: HttpServletRequest, response: HttpServletResponse) {
+    app.cookies.delete(SessionTokenStrategy.Cookie)(CookieOptions(path = "/"))
+  }
+}
+
+class PasswordStrategy(protected val app: ScalatraBase) extends ScentryStrategy[UserAccountsRow] {
+
+  override def isValid(implicit request: HttpServletRequest) =
+    request.getHeader(SessionTokenStrategy.Email) != null && request.getHeader(SessionTokenStrategy.Password) != null
+
+  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[UserAccountsRow] = {
+    val eMail = headerOption(request, SessionTokenStrategy.Email).get
+    User.authenticatedUser(UserLogin(eMail, request.getHeader(SessionTokenStrategy.Password)))
   }
 
   private[this] def headerOption(request: HttpServletRequest, key: String) =
     Option(request.getHeader(key))
 }
 
-trait AuthenticationSupport extends ScentrySupport[User] with BasicAuthSupport[User] {
+trait AuthenticationSupport extends ScentrySupport[UserAccountsRow] with BasicAuthSupport[UserAccountsRow] {
   self: ScalatraBase =>
 
   protected def fromSession = { case id: String =>
     val session = UserSession.byHashString(id)
-    session.map(_.user).get
+    session.map(UserSession.user).get
   }
-  protected def toSession = { case usr: User ⇒ UserSession.findFromUserOrCreate(usr.id).hashString }
+  protected def toSession = { case usr: UserAccountsRow ⇒ UserSession.findFromUserOrCreate(usr.userAccountId).hashString }
 
   /**
     * Registers authentication strategies.
@@ -94,6 +114,7 @@ trait AuthenticationSupport extends ScentrySupport[User] with BasicAuthSupport[U
   override protected def registerAuthStrategies = {
     scentry.register("user_password", _ ⇒ new PasswordStrategy(self))
     scentry.register("session_token", _ ⇒ new SessionTokenStrategy(self))
+    scentry.register("cookie", _ => new CookieStrategy(self))
   }
 
 }
