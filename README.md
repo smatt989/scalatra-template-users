@@ -1,6 +1,10 @@
-# Bee Label Maker #
+# Scalatra Template App #
 
-This is image annotation software built using scalatra with a connection to Postgres/H2 db with Slick and serving up a react/redux web front end.
+This is a simple Scalatra template application built using scalatra with a connection to Postgres/H2 db with Slick and serving up a react/redux web front end.
+
+It provides a User model with authentication as well as a User Connection model.
+
+It also provides core utilities like a lightweight ORM, authentication helper functions, and CORS support.
 
 ## Initial Setup
 
@@ -9,7 +13,7 @@ https://github.com/smatt989/bee/wiki/Initial-Setup
 ## Build & Run ##
 
 ```sh
-$ cd bee
+$ cd scalatra-template-users
 $ ./sbt
 > jetty:start
 > browse
@@ -45,7 +49,7 @@ $ webpack-dev-server --host 0.0.0.0 --port 9000
 
 There is a good reason to do this!  To have front end code changes show up immediately, run the backend the usual way (jetty:start) so that it does not restart when it detects a code change, and then run webpack-dev-server so that the front end DOES recompile when it detects a code change.  This will save lots of time.
 
-Obviously, when doing this, will need to specify the domain for http requests from the front end (as opposed to when the front end is hosted on the same domain).  This is the difference between making a request to http://localhost:8080/tasks vs. /tasks.
+Obviously, when doing this, will need to specify the domain for http requests from the front end (as opposed to when the front end is hosted on the same domain).  This is the difference between making a request to http://localhost:8080/page vs. /page.
 
 For unfortunate reasons, when developing the front end separately from the backend, the html must come from a different place than if developing as one vertical tech stack.
 
